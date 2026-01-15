@@ -2,14 +2,20 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h>
 #include <assert.h>
 
+/* 
+TODO: FIX
+This has to be done to avoid conflict with the kernels fcntl.h. 
+Could cause problems if i build on another system. 
+*/
+#include "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/fcntl.h"
+
 #define stat xv6_stat  // avoid clash with host struct stat
-#include "kernel/types.h"
-#include "kernel/fs.h"
-#include "kernel/stat.h"
-#include "kernel/param.h"
+#include <types.h>
+#include <fs.h>
+#include <stat.h>
+#include <param.h>
 
 #ifndef static_assert
 #define static_assert(a, b) do { switch (0) case 0: case (a): ; } while (0)
@@ -128,14 +134,12 @@ main(int argc, char *argv[])
   iappend(rootino, &de, sizeof(de));
 
   for(i = 2; i < argc; i++){
-    // get rid of "user/"
-    char *shortname;
-    if(strncmp(argv[i], "user/", 5) == 0)
-      shortname = argv[i] + 5;
+    // get rid of directory path prefix
+    char *shortname = strrchr(argv[i], '/');
+    if (shortname)
+      shortname++;  // skip the '/'
     else
       shortname = argv[i];
-    
-    assert(index(shortname, '/') == 0);
 
     if((fd = open(argv[i], 0)) < 0)
       die(argv[i]);

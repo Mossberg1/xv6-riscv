@@ -2,33 +2,33 @@ K=kernel
 U=user
 
 OBJS = \
-  $K/entry.o \
-  $K/start.o \
-  $K/console.o \
-  $K/printf.o \
-  $K/uart.o \
-  $K/kalloc.o \
-  $K/spinlock.o \
-  $K/string.o \
-  $K/main.o \
-  $K/vm.o \
-  $K/proc.o \
-  $K/swtch.o \
-  $K/trampoline.o \
-  $K/trap.o \
-  $K/syscall.o \
-  $K/sysproc.o \
-  $K/bio.o \
-  $K/fs.o \
-  $K/log.o \
-  $K/sleeplock.o \
-  $K/file.o \
-  $K/pipe.o \
-  $K/exec.o \
-  $K/sysfile.o \
-  $K/kernelvec.o \
-  $K/plic.o \
-  $K/virtio_disk.o
+	$K/core/entry.o \
+	$K/core/start.o \
+	$K/drivers/console.o \
+	$K/lib/printf.o \
+	$K/drivers/uart.o \
+	$K/memory/kalloc.o \
+	$K/sync/spinlock.o \
+	$K/lib/string.o \
+	$K/core/main.o \
+	$K/memory/vm.o \
+	$K/core/proc.o \
+	$K/core/swtch.o \
+	$K/core/trampoline.o \
+	$K/core/trap.o \
+	$K/syscall/syscall.o \
+	$K/syscall/sysproc.o \
+	$K/fs/bio.o \
+	$K/fs/fs.o \
+	$K/fs/log.o \
+	$K/sync/sleeplock.o \
+	$K/fs/file.o \
+	$K/fs/pipe.o \
+	$K/core/exec.o \
+	$K/syscall/sysfile.o \
+	$K/core/kernelvec.o \
+	$K/drivers/plic.o \
+	$K/drivers/virtio_disk.o
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
@@ -73,7 +73,7 @@ CFLAGS += -fno-builtin-strchr -fno-builtin-exit -fno-builtin-malloc -fno-builtin
 CFLAGS += -fno-builtin-free
 CFLAGS += -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
-CFLAGS += -I.
+CFLAGS += -I$K/include -I$U/include -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
@@ -91,33 +91,41 @@ $K/kernel: $(OBJS) $K/kernel.ld
 	$(OBJDUMP) -S $K/kernel > $K/kernel.asm
 	$(OBJDUMP) -t $K/kernel | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $K/kernel.sym
 
+$K/%.o: $K/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 $K/%.o: $K/%.S
 	$(CC) -march=rv64gc -g -c -o $@ $<
 
-tags: $(OBJS)
-	etags kernel/*.S kernel/*.c
+tags:
+	find kernel user -name '*.[cS]' | xargs etags
 
-ULIB = $U/ulib.o $U/usys.o $U/printf.o $U/umalloc.o
+$U/%.o: $U/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+ULIB = \
+	$U/lib/ulib.o \
+	$U/lib/usys.o \
+	$U/lib/printf.o \
+	$U/lib/umalloc.o
 
 _%: %.o $(ULIB) $U/user.ld
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $< $(ULIB)
 	$(OBJDUMP) -S $@ > $*.asm
 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
 
-$U/usys.S : $U/usys.pl
-	perl $U/usys.pl > $U/usys.S
+$U/lib/usys.S : $U/usys.pl
+	perl $U/usys.pl > $U/lib/usys.S
 
-$U/usys.o : $U/usys.S
-	$(CC) $(CFLAGS) -c -o $U/usys.o $U/usys.S
+$U/lib/usys.o : $U/lib/usys.S
+	$(CC) $(CFLAGS) -c -o $U/lib/usys.o $U/lib/usys.S
 
-$U/_forktest: $U/forktest.o $(ULIB)
-	# forktest has less library code linked in - needs to be small
-	# in order to be able to max out the proc table.
-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $U/_forktest $U/forktest.o $U/ulib.o $U/usys.o
-	$(OBJDUMP) -S $U/_forktest > $U/forktest.asm
+$U/_forktest: $U/tests/forktest.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 \
+	-o $U/_forktest $U/tests/forktest.o $U/lib/ulib.o $U/lib/usys.o
 
-mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
-	gcc -Wno-unknown-attributes -I. -o mkfs/mkfs mkfs/mkfs.c
+mkfs/mkfs: mkfs/mkfs.c $K/include/fs.h $K/include/param.h
+	gcc -Wno-unknown-attributes -I. -I$K/include -o mkfs/mkfs mkfs/mkfs.c
 
 # Prevent deletion of intermediate files, e.g. cat.o, after first build, so
 # that disk image changes after first build are persistent until clean.  More
@@ -126,38 +134,39 @@ mkfs/mkfs: mkfs/mkfs.c $K/fs.h $K/param.h
 .PRECIOUS: %.o
 
 UPROGS=\
-	$U/_cat\
-	$U/_echo\
-	$U/_forktest\
-	$U/_grep\
-	$U/_init\
-	$U/_kill\
-	$U/_ln\
-	$U/_ls\
-	$U/_mkdir\
-	$U/_rm\
-	$U/_sh\
-	$U/_stressfs\
-	$U/_usertests\
-	$U/_grind\
-	$U/_wc\
-	$U/_zombie\
-	$U/_logstress\
-	$U/_forphan\
-	$U/_dorphan\
+	$U/bin/_cat\
+	$U/bin/_echo\
+	$U/tests/_forktest\
+	$U/bin/_grep\
+	$U/init/_init\
+	$U/bin/_kill\
+	$U/bin/_ln\
+	$U/bin/_ls\
+	$U/bin/_mkdir\
+	$U/bin/_rm\
+	$U/bin/_sh\
+	$U/tests/_stressfs\
+	$U/tests/_usertests\
+	$U/tests/_grind\
+	$U/bin/_wc\
+	$U/tests/_zombie\
+	$U/tests/_logstress\
+	$U/tests/_forphan\
+	$U/tests/_dorphan\
 
 fs.img: mkfs/mkfs README $(UPROGS)
-	mkfs/mkfs fs.img README $(UPROGS)
+	cd user && ../mkfs/mkfs ../fs.img ../README $(patsubst $U/%,%,$(UPROGS))
 
--include kernel/*.d user/*.d
+-include $(shell find kernel user -name '*.d')
 
 clean: 
 	rm -f *.tex *.dvi *.idx *.aux *.log *.ind *.ilg \
-	*/*.o */*.d */*.asm */*.sym \
-	$K/kernel fs.img \
-	mkfs/mkfs .gdbinit \
-        $U/usys.S \
-	$(UPROGS)
+	mkfs/mkfs .gdbinit $U/lib/usys.S fs.img
+	find $K $U -type f -name "*.o" -delete
+	find $K $U -type f -name "*.d" -delete
+	find $K $U -type f -name "*.asm" -delete
+	find $K $U -type f -name "*.sym" -delete
+	rm -f $K/kernel $(UPROGS)
 
 # try to generate a unique GDB port
 GDBPORT = $(shell expr `id -u` % 5000 + 25000)
@@ -169,10 +178,16 @@ ifndef CPUS
 CPUS := 3
 endif
 
-QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
+#QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic
+QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS)
 QEMUOPTS += -global virtio-mmio.force-legacy=false
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
+
+QEMUOPTS += -device virtio-gpu-device
+QEMUOPTS += -device virtio-keyboard-device
+QEMUOPTS += -device virtio-mouse-device
+QEMUOPTS += -display cocoa
 
 qemu: check-qemu-version $K/kernel fs.img
 	$(QEMU) $(QEMUOPTS)

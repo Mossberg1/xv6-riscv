@@ -1,0 +1,24 @@
+CompileFlags:
+  Add:
+    - -xc
+    - -std=gnu11
+    - -Wall
+    - -Werror
+    - -I./kernel/include
+    - -I./user/include
+    - -I./mkfs
+    - -I.
+    - -Wno-unused-function
+
+Diagnostics:
+  Suppress:
+    - unknown-warning-option
+    - unused-command-line-argument
+    - incompatible-pointer-types
+    - implicit-int
+
+Index:
+  Background: Build
+
+Completion:
+  AllScopes: true

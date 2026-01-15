@@ -1,0 +1,20 @@
+# Common
+-Wall
+-Werror
+-Wno-unknown-attributes
+-O0
+-ffreestanding
+-fno-builtin
+-fno-common
+-fno-omit-frame-pointer
+-fno-stack-protector
+-nostdlib
+-Wno-unused-function
+
+# Kernel & user headers
+-Ikernel/include
+-Iuser/include
+-I.
+
+# Debug
+-g
