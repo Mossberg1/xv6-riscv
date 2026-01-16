@@ -101,6 +101,9 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+extern uint64 sys_fbcopy(void);
+extern uint64 sys_fbmap(void);
+extern uint64 sys_fbflush(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -126,6 +129,9 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    = sys_link,
 [SYS_mkdir]   = sys_mkdir,
 [SYS_close]   = sys_close,
+[SYS_fbcopy]  = sys_fbcopy,
+[SYS_fbmap]   = sys_fbmap,
+[SYS_fbflush] = sys_fbflush
 };
 
 void

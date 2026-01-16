@@ -9,6 +9,7 @@ CompileFlags:
     - -I./mkfs
     - -I.
     - -Wno-unused-function
+    - -I$U/games/doom
 
 Diagnostics:
   Suppress:

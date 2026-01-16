@@ -2,6 +2,7 @@
 
 #include <types.h>
 #include <riscv.h>
+#include <proc.h>
 
 struct buf;
 struct context;
@@ -188,6 +189,11 @@ void            virtio_disk_intr(void);
 
 // virtio_gpu.c
 void            virtio_gpu_init(void);
+void            gpu_flush(void);
+void            gpu_draw_pixel(int x, int y, uint32 color);
+uint64          sys_fbcopy(void);
+uint64          sys_fbmap(void);
+uint64          sys_fbflush(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

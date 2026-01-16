@@ -10,6 +10,7 @@
 -fno-stack-protector
 -nostdlib
 -Wno-unused-function
+-I$U/games/doom
 
 # Kernel & user headers
 -Ikernel/include

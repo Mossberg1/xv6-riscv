@@ -7,25 +7,57 @@
 #include <sleeplock.h>
 #include <virtio.h>
 
+#define BACKGROUND_COLOR 0x00336699
+
 #define R(r) ((volatile uint32 *)(VIRTIO1 + (r)))
 
-// GPU command types
-#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO      0x0100
-#define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D    0x0101
-#define VIRTIO_GPU_CMD_SET_SCANOUT           0x0103
-#define VIRTIO_GPU_CMD_RESOURCE_FLUSH        0x0104
-#define VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D   0x0105
+// 2d commands
+#define VIRTIO_GPU_CMD_GET_DISPLAY_INFO        0x0100
+#define VIRTIO_GPU_CMD_RESOURCE_CREATE_2D      0x0101
+#define VIRTIO_GPU_CMD_RESOURCE_UNREF          0x0102
+#define VIRTIO_GPU_CMD_SET_SCANOUT             0x0103
+#define VIRTIO_GPU_CMD_RESOURCE_FLUSH          0x0104
+#define VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D     0x0105
 #define VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING 0x0106
+#define VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING 0x0107
+#define VIRTIO_GPU_CMD_GET_CAPSET_INFO         0x0108
+#define VIRTIO_GPU_CMD_GET_CAPSET              0x0109
+#define VIRTIO_GPU_CMD_GET_EDID                0x0110
 
+// Cursor commands
+#define VIRTIO_GPU_CMD_UPDATE_CURSOR           0x0300
+#define VIRTIO_GPU_CMD_MOVE_CURSOR             0x0301
+
+// Success responses
 #define VIRTIO_GPU_RESP_OK_NODATA       0x1100
 #define VIRTIO_GPU_RESP_OK_DISPLAY_INFO 0x1101
+#define VIRTIO_GPU_RESP_OK_CAPSET_INFO  0x1102
+#define VIRTIO_GPU_RESP_OK_CAPSET       0x1103
+#define VIRTIO_GPU_RESP_OK_EDID         0x1104
+
+// Error responses
+#define VIRTIO_GPU_RESP_ERR_UNSPEC              0x1200
+#define VIRTIO_GPU_RESP_ERR_OUT_OF_MEMORY       0x1201
+#define VIRTIO_GPU_RESP_ERR_INVALID_SCANOUT_ID  0x1202
+#define VIRTIO_GPU_RESP_ERR_INVALID_RESOURCE_ID 0x1203
+#define VIRTIO_GPU_RESP_ERR_INVALID_CONTEXT_ID  0x1204
+#define VIRTIO_GPU_RESP_ERR_INVALID_PARAMETER   0x1205
+
+#define VIRTIO_GPU_FLAG_FENCE (1 << 0)
 
 // Pixel formats
 #define VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM 1
+#define VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM 2
+#define VIRTIO_GPU_FORMAT_A8R8G8B8_UNORM 3
+#define VIRTIO_GPU_FORMAT_X8R8G8B8_UNORM 4
+#define VIRTIO_GPU_FORMAT_R8G8B8A8_UNORM 67
+#define VIRTIO_GPU_FORMAT_X8B8G8R8_UNORM 68
+#define VIRTIO_GPU_FORMAT_A8B8G8R8_UNORM 121
+#define VIRTIO_GPU_FORMAT_R8G8B8X8_UNORM 134
 
 // Target 640x480 = 1,228,800 bytes = 300 pages
 #define FB_WIDTH  640
-#define FB_HEIGHT 480
+#define FB_HEIGHT 400
 #define FB_BPP    4
 #define FB_SIZE   (FB_WIDTH * FB_HEIGHT * FB_BPP)
 #define FB_PAGES  ((FB_SIZE + PGSIZE - 1) / PGSIZE)
@@ -43,22 +75,22 @@ struct virtio_gpu_ctrl_hdr {
   uint64 fence_id;
   uint32 ctx_id;
   uint32 padding;
-};
+}__attribute__((packed));
 
 struct virtio_gpu_rect {
   uint32 x, y, width, height;
-};
+}__attribute__((packed));
 
 struct virtio_gpu_display_one {
   struct virtio_gpu_rect r;
   uint32 enabled;
   uint32 flags;
-};
+}__attribute__((packed));
 
 struct virtio_gpu_resp_display_info {
   struct virtio_gpu_ctrl_hdr hdr;
   struct virtio_gpu_display_one pmodes[16];
-};
+}__attribute__((packed));
 
 struct virtio_gpu_resource_create_2d {
   struct virtio_gpu_ctrl_hdr hdr;
@@ -66,26 +98,38 @@ struct virtio_gpu_resource_create_2d {
   uint32 format;
   uint32 width;
   uint32 height;
-};
+}__attribute__((packed));
+
+struct virtio_gpu_resource_unref { 
+  struct virtio_gpu_ctrl_hdr hdr; 
+  uint32 resource_id; 
+  uint32 padding; 
+}__attribute__((packed)); 
 
 struct virtio_gpu_resource_attach_backing {
   struct virtio_gpu_ctrl_hdr hdr;
   uint32 resource_id;
   uint32 nr_entries;
-};
+}__attribute__((packed));
+
+struct virtio_gpu_resource_detach_backing { 
+  struct virtio_gpu_ctrl_hdr hdr; 
+  uint32 resource_id; 
+  uint32 padding; 
+}__attribute__((packed)); 
 
 struct virtio_gpu_mem_entry {
   uint64 addr;
   uint32 length;
   uint32 padding;
-};
+}__attribute__((packed));
 
 struct virtio_gpu_set_scanout {
   struct virtio_gpu_ctrl_hdr hdr;
   struct virtio_gpu_rect r;
   uint32 scanout_id;
   uint32 resource_id;
-};
+}__attribute__((packed));
 
 struct virtio_gpu_transfer_to_host_2d {
   struct virtio_gpu_ctrl_hdr hdr;
@@ -93,14 +137,30 @@ struct virtio_gpu_transfer_to_host_2d {
   uint64 offset;
   uint32 resource_id;
   uint32 padding;
-};
+}__attribute__((packed));
 
 struct virtio_gpu_resource_flush {
   struct virtio_gpu_ctrl_hdr hdr;
   struct virtio_gpu_rect r;
   uint32 resource_id;
   uint32 padding;
-};
+}__attribute__((packed));
+
+struct virtio_gpu_cursor_pos { 
+  uint32 scanout_id; 
+  uint32 x; 
+  uint32 y; 
+  uint32 padding; 
+}__attribute__((packed)); 
+ 
+struct virtio_gpu_update_cursor { 
+  struct virtio_gpu_ctrl_hdr hdr; 
+  struct virtio_gpu_cursor_pos pos; 
+  uint32 resource_id; 
+  uint32 hot_x; 
+  uint32 hot_y; 
+  uint32 padding; 
+}__attribute__((packed)); 
 
 static struct {
   struct virtq_desc *desc;
@@ -111,7 +171,12 @@ static struct {
   uint16 used_idx;
   
   struct spinlock lock;
-} gpu;
+
+  // Since this is a global static variable, VAddr == PAddr.
+  // The GPU can safely read this from anywhere.
+  char cmd_buf[PGSIZE];
+  char resp_buf[PGSIZE]; 
+} gpu ;
 
 static void *fb_pages[FB_PAGES];
 //static uint32 *framebuffer;
@@ -139,6 +204,13 @@ static void
 gpu_send_cmd(void *cmd, int cmd_size, void *resp, int resp_size)
 {
   acquire(&gpu.lock);
+
+  if (cmd_size > PGSIZE) panic("virtio_gpu: cmd too big");
+
+  // 1. COPY command from Stack (Virtual) to Global Buffer (Physical)
+  memmove(gpu.cmd_buf, cmd, cmd_size);
+  
+  if (resp && resp_size > 0) memset(gpu.resp_buf, 0, resp_size);
   
   int idx[2];
   idx[0] = alloc_desc();
@@ -147,13 +219,13 @@ gpu_send_cmd(void *cmd, int cmd_size, void *resp, int resp_size)
   printf("gpu_send_cmd: desc %d, %d\n", idx[0], idx[1]);
   
   // Command descriptor (device reads)
-  gpu.desc[idx[0]].addr = (uint64)cmd;
+  gpu.desc[idx[0]].addr = (uint64)gpu.cmd_buf;
   gpu.desc[idx[0]].len = cmd_size;
   gpu.desc[idx[0]].flags = VIRTQ_DESC_F_NEXT;
   gpu.desc[idx[0]].next = idx[1];
   
   // Response descriptor (device writes)
-  gpu.desc[idx[1]].addr = (uint64)resp;
+  gpu.desc[idx[1]].addr = (uint64)gpu.resp_buf;
   gpu.desc[idx[1]].len = resp_size;
   gpu.desc[idx[1]].flags = VIRTQ_DESC_F_WRITE;
   gpu.desc[idx[1]].next = 0;
@@ -188,6 +260,11 @@ gpu_send_cmd(void *cmd, int cmd_size, void *resp, int resp_size)
 
   printf("gpu_send_cmd: done, used->idx=%d\n", gpu.used->idx);
   gpu.used_idx++;
+
+  // 3. Copy response back to stack
+  if (resp && resp_size > 0) {
+    memmove(resp, gpu.resp_buf, resp_size);
+  }
   
   free_desc(idx[0]);
   free_desc(idx[1]);
@@ -377,13 +454,70 @@ virtio_gpu_init(void)
   // Fill screen with a color.
   for (int y = 0; y < fb_height; y++) {
     for (int x = 0; x < fb_width; x++) {
-      gpu_draw_pixel(x, y, 0x00336699);  
+      gpu_draw_pixel(x, y, BACKGROUND_COLOR);  
     }
   }
   
   gpu_flush();
   
   printf("virtio_gpu: initialized %dx%d\n", fb_width, fb_height);
+}
+
+
+// Syscalls to be able to use the driver in userspace.
+
+uint64 
+sys_fbcopy(void) // Copy the userspace buffer to the gpu and render.
+{
+  uint64 ubuf; // Userspace buffer.
+  argaddr(0, &ubuf);
+
+  struct proc* p = myproc();
+
+  for (int i = 0; i < FB_PAGES; i++)
+  {
+    if (copyin(p->pagetable, (char*)fb_pages[i], ubuf + i*PGSIZE, PGSIZE) < 0) 
+    {
+      return -1;
+    }
+  }
+
+  gpu_flush();
+  return 0;
+}
+
+uint64
+sys_fbmap(void) // Map framebuffer to userspace.
+{
+  struct proc* p = myproc();
+
+  uint64 vaddr = PGROUNDUP(p->sz); 
+
+  for (int i = 0; i < FB_PAGES; i++) 
+  {
+    if (mappages(
+        p->pagetable, 
+        vaddr + i * PGSIZE, 
+        PGSIZE, 
+        (uint64)fb_pages[i], 
+        PTE_R | PTE_W | PTE_U) != 0
+    ) 
+    {
+      return -1;
+    }
+  }
+
+  p->sz = vaddr + FB_PAGES * PGSIZE;
+
+  return vaddr;
+}
+
+
+uint64
+sys_fbflush(void) 
+{
+  gpu_flush();
+  return 0;
 }
 
 

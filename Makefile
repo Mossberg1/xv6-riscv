@@ -75,6 +75,7 @@ CFLAGS += -fno-builtin-free
 CFLAGS += -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I$K/include -I$U/include -I.
+CFLAGS += -I$U/games/doom
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
@@ -108,7 +109,8 @@ ULIB = \
 	$U/lib/ulib.o \
 	$U/lib/usys.o \
 	$U/lib/printf.o \
-	$U/lib/umalloc.o
+	$U/lib/umalloc.o \
+	$U/lib/framebuffer.o
 
 _%: %.o $(ULIB) $U/user.ld
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $< $(ULIB)
@@ -154,6 +156,20 @@ UPROGS=\
 	$U/tests/_logstress\
 	$U/tests/_forphan\
 	$U/tests/_dorphan\
+	$U/tests/_fbtest\
+
+# DOOM
+# D = $U/games/doom
+# DOOM_SRCS = $(wildcard $D/*.c)
+# DOOM_OBJS = $(patsubst %.c,%.o,$(wildcard $D/*.c))
+# # Only keep xv6 platform implementation
+# DOOM_OBJS := $(filter-out $D/doomgeneric_%.o $D/i_allegromusic.o $D/i_allegrosound.o $D/i_sdlmusic.o $D/i_sdlsound.o,$(DOOM_OBJS))# Special compilation rule for Doom files - don't use system headers
+# $(D)/%.o: $(D)/%.c
+# 	$(CC) $(CFLAGS) -nostdinc -c -o $@ $<
+# UPROGS += $D/_doom
+# $D/_doom: $(DOOM_OBJS) $(ULIB)
+# 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $(DOOM_OBJS) $(ULIB)
+# 	$(OBJDUMP) -S $@ > $D/doom.asm
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	cd user && ../mkfs/mkfs ../fs.img ../README $(patsubst $U/%,%,$(UPROGS))
@@ -179,7 +195,7 @@ ifndef CPUS
 CPUS := 3
 endif
 
-QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS)
+QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 512M -smp $(CPUS)
 QEMUOPTS += -global virtio-mmio.force-legacy=false
 QEMUOPTS += -drive file=fs.img,if=none,format=raw,id=x0
 QEMUOPTS += -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
