@@ -56,8 +56,8 @@
 #define VIRTIO_GPU_FORMAT_R8G8B8X8_UNORM 134
 
 // Target 640x480 = 1,228,800 bytes = 300 pages
-#define FB_WIDTH  640
-#define FB_HEIGHT 400
+#define FB_WIDTH  1024
+#define FB_HEIGHT 768
 #define FB_BPP    4
 #define FB_SIZE   (FB_WIDTH * FB_HEIGHT * FB_BPP)
 #define FB_PAGES  ((FB_SIZE + PGSIZE - 1) / PGSIZE)
@@ -68,6 +68,8 @@
 
 #define RESOURCE_ID 1
 #define NUM 8  // virtqueue size
+
+#define GPU_CMD_BUF_SIZE (16 * PGSIZE)  // or larger if needed
 
 struct virtio_gpu_ctrl_hdr {
   uint32 type;
@@ -174,8 +176,8 @@ static struct {
 
   // Since this is a global static variable, VAddr == PAddr.
   // The GPU can safely read this from anywhere.
-  char cmd_buf[PGSIZE];
-  char resp_buf[PGSIZE]; 
+  char cmd_buf[GPU_CMD_BUF_SIZE];
+  char resp_buf[GPU_CMD_BUF_SIZE]; 
 } gpu ;
 
 static void *fb_pages[FB_PAGES];
@@ -205,7 +207,7 @@ gpu_send_cmd(void *cmd, int cmd_size, void *resp, int resp_size)
 {
   acquire(&gpu.lock);
 
-  if (cmd_size > PGSIZE) panic("virtio_gpu: cmd too big");
+  if (cmd_size > GPU_CMD_BUF_SIZE) panic("virtio_gpu: cmd too big");
 
   // 1. COPY command from Stack (Virtual) to Global Buffer (Physical)
   memmove(gpu.cmd_buf, cmd, cmd_size);
@@ -216,7 +218,6 @@ gpu_send_cmd(void *cmd, int cmd_size, void *resp, int resp_size)
   idx[0] = alloc_desc();
   idx[1] = alloc_desc();
 
-  printf("gpu_send_cmd: desc %d, %d\n", idx[0], idx[1]);
   
   // Command descriptor (device reads)
   gpu.desc[idx[0]].addr = (uint64)gpu.cmd_buf;
@@ -235,30 +236,21 @@ gpu_send_cmd(void *cmd, int cmd_size, void *resp, int resp_size)
   gpu.avail->idx++;
   __sync_synchronize();
   
-  printf("gpu_send_cmd: notifying queue, avail->idx=%d\n", gpu.avail->idx);
   *R(VIRTIO_MMIO_QUEUE_NOTIFY) = 0;
 
-  printf("gpu_send_cmd: waiting for response (used_idx=%d, used->idx=%d)\n", 
-        gpu.used_idx, gpu.used->idx);
   
   // Wait for completion
-  /*
-  while (gpu.used_idx == gpu.used->idx)
-    ;
-  */
+  // while (gpu.used_idx == gpu.used->idx)
+  //   ;
 
   // Wait for completion with timeout for debugging DEBUG
   int timeout = 100000000;
   while (gpu.used_idx == gpu.used->idx) {
     if (--timeout == 0) {
-      printf("gpu_send_cmd: TIMEOUT! used_idx=%d, used->idx=%d\n", 
-             gpu.used_idx, gpu.used->idx);
       break;
     }
   }
-  // DEBUG
 
-  printf("gpu_send_cmd: done, used->idx=%d\n", gpu.used->idx);
   gpu.used_idx++;
 
   // 3. Copy response back to stack
@@ -450,13 +442,6 @@ virtio_gpu_init(void)
   struct virtio_gpu_ctrl_hdr resp_scanout;
   memset(&resp_scanout, 0, sizeof(resp_scanout));
   gpu_send_cmd(&cmd_scanout, sizeof(cmd_scanout), &resp_scanout, sizeof(resp_scanout));
-
-  // Fill screen with a color.
-  for (int y = 0; y < fb_height; y++) {
-    for (int x = 0; x < fb_width; x++) {
-      gpu_draw_pixel(x, y, BACKGROUND_COLOR);  
-    }
-  }
   
   gpu_flush();
   
@@ -474,48 +459,19 @@ sys_fbcopy(void) // Copy the userspace buffer to the gpu and render.
 
   struct proc* p = myproc();
 
+  acquire(&gpu.lock);
+
   for (int i = 0; i < FB_PAGES; i++)
   {
     if (copyin(p->pagetable, (char*)fb_pages[i], ubuf + i*PGSIZE, PGSIZE) < 0) 
     {
+      release(&gpu.lock);
       return -1;
     }
   }
 
-  gpu_flush();
-  return 0;
-}
+  release(&gpu.lock);
 
-uint64
-sys_fbmap(void) // Map framebuffer to userspace.
-{
-  struct proc* p = myproc();
-
-  uint64 vaddr = PGROUNDUP(p->sz); 
-
-  for (int i = 0; i < FB_PAGES; i++) 
-  {
-    if (mappages(
-        p->pagetable, 
-        vaddr + i * PGSIZE, 
-        PGSIZE, 
-        (uint64)fb_pages[i], 
-        PTE_R | PTE_W | PTE_U) != 0
-    ) 
-    {
-      return -1;
-    }
-  }
-
-  p->sz = vaddr + FB_PAGES * PGSIZE;
-
-  return vaddr;
-}
-
-
-uint64
-sys_fbflush(void) 
-{
   gpu_flush();
   return 0;
 }

@@ -110,7 +110,19 @@ ULIB = \
 	$U/lib/usys.o \
 	$U/lib/printf.o \
 	$U/lib/umalloc.o \
-	$U/lib/framebuffer.o
+	$U/lib/framebuffer.o \
+	$U/lib/terminus_16n.o
+
+
+# Build desktop binary
+DESKTOP_OBJS = \
+	$U/desktop/desktop.o \
+	$U/desktop/menubar.o
+
+$U/desktop/_desktop: $(DESKTOP_OBJS) $(ULIB)
+	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $(DESKTOP_OBJS) $(ULIB)
+	$(OBJDUMP) -S $@ > $U/desktop/desktop.asm
+
 
 _%: %.o $(ULIB) $U/user.ld
 	$(LD) $(LDFLAGS) -T $U/user.ld -o $@ $< $(ULIB)
@@ -157,6 +169,7 @@ UPROGS=\
 	$U/tests/_forphan\
 	$U/tests/_dorphan\
 	$U/tests/_fbtest\
+	$U/desktop/_desktop
 
 # DOOM
 # D = $U/games/doom
