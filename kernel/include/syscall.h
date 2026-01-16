@@ -23,5 +23,3 @@
 #define SYS_mkdir   20
 #define SYS_close   21
 #define SYS_fbcopy  22 // Copy userspace framebuffer to gpu
-#define SYS_fbmap   23 // Map framebuffer pages to userspace.
-#define SYS_fbflush 24 // Flush framebuffer

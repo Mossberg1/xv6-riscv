@@ -43,5 +43,3 @@ entry("sbrk");
 entry("pause");
 entry("uptime");
 entry("fbcopy");
-entry("fbmap");
-entry("fbflush");

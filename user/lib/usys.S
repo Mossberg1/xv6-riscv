@@ -110,13 +110,3 @@ fbcopy:
  li a7, SYS_fbcopy
  ecall
  ret
-.global fbmap
-fbmap:
- li a7, SYS_fbmap
- ecall
- ret
-.global fbflush
-fbflush:
- li a7, SYS_fbflush
- ecall
- ret
